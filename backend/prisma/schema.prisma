@@ -1,0 +1,41 @@
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+enum ItemType {
+  TEXT
+  URL
+}
+
+model Item {
+  id         String          @id @default(uuid())
+  type       ItemType
+  title      String?
+  url        String?
+  rawContent String          @db.Text
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  chunks     DocumentChunk[]
+
+  @@map("items")
+}
+
+model DocumentChunk {
+  id         String                      @id @default(uuid())
+  itemId     String
+  item       Item                        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  chunkIndex Int
+  content    String                      @db.Text
+  embedding  Unsupported("vector(1536)")?
+  createdAt  DateTime                    @default(now())
+
+  @@index([itemId])
+  @@map("document_chunks")
+}
