@@ -1,6 +1,7 @@
 {
   "name": "ai-knowledge-inbox",
   "version": "1.0.0",
+  "type": "module",
   "description": "Minimal AI Knowledge Inbox with RAG, React, Express, Prisma, and pgvector",
   "private": true,
   "workspaces": [
