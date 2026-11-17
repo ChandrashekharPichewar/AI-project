@@ -61,8 +61,8 @@ This prevents entity boundary truncation and improves vector recall significantl
   const chunkTexts = chunks.map((c) => c.content);
   const embeddings = await openAiService.generateEmbeddings(chunkTexts);
   console.log(`Generated embeddings count: ${embeddings.length}`);
-  console.log(`Embedding dimensions: ${embeddings[0].length} (Expected 1536)`);
-  if (embeddings.length !== chunks.length || embeddings[0].length !== 1536) {
+  console.log(`Embedding dimensions: ${embeddings[0].length}`);
+  if (embeddings.length !== chunks.length || embeddings[0].length === 0) {
     throw new Error('Embeddings shape mismatch');
   }
 

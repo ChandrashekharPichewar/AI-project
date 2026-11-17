@@ -28,13 +28,13 @@ model Item {
 }
 
 model DocumentChunk {
-  id         String                      @id @default(uuid())
+  id         String                     @id @default(uuid())
   itemId     String
-  item       Item                        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  item       Item                       @relation(fields: [itemId], references: [id], onDelete: Cascade)
   chunkIndex Int
-  content    String                      @db.Text
-  embedding  Unsupported("vector(1536)")?
-  createdAt  DateTime                    @default(now())
+  content    String                     @db.Text
+  embedding  Unsupported("vector(768)")?
+  createdAt  DateTime                   @default(now())
 
   @@index([itemId])
   @@map("document_chunks")

@@ -4,7 +4,7 @@ export const openApiSpec = {
     title: 'AI Knowledge Inbox API',
     version: '1.0.0',
     description:
-      'Production-style minimal web API for content ingestion, chunking, 1536-d vector embeddings, and semantic question answering powered by PostgreSQL (`pgvector`), Prisma, Cheerio, and OpenAI GPT (`gpt-4o-mini`).',
+      'Production-style minimal web API for content ingestion, chunking, semantic vector embeddings (text-embedding-004), and question answering powered by Google Gemini (gemini-1.5-flash), PostgreSQL (pgvector), Prisma, and Cheerio.',
     contact: {
       name: 'AI Knowledge Inbox',
     },

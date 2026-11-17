@@ -14,10 +14,18 @@
     "prisma:push": "prisma db push",
     "lint": "tsc --noEmit"
   },
-  "keywords": ["rag", "pgvector", "prisma", "express", "openai", "knowledge-base"],
+  "keywords": [
+    "rag",
+    "pgvector",
+    "prisma",
+    "express",
+    "openai",
+    "knowledge-base"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^5.22.0",
     "axios": "^1.7.9",
     "cheerio": "^1.0.0",
