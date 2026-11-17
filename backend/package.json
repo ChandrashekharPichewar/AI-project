@@ -1,10 +1,12 @@
 {
   "name": "ai-knowledge-inbox-backend",
   "version": "1.0.0",
+  "type": "module",
   "description": "Minimal AI Knowledge Inbox Backend with Express, Prisma, pgvector, and OpenAI",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "postinstall": "prisma generate",
     "build": "prisma generate && tsc",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",

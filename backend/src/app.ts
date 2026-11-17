@@ -10,6 +10,7 @@ import { ingestController } from './controllers/ingest.controller.js';
 import { itemsController } from './controllers/items.controller.js';
 import { queryController } from './controllers/query.controller.js';
 import { healthCheck } from './controllers/health.controller.js';
+import { openApiSpec, getSwaggerHtml } from './config/swagger.js';
 
 export function createApp(): Express {
   const app = express();
@@ -26,6 +27,30 @@ export function createApp(): Express {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(requestLogger);
+
+  // Swagger Documentation Endpoints
+  const serveSwaggerDocs = (req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(getSwaggerHtml());
+  };
+
+  const serveSwaggerJson = (req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.json(openApiSpec);
+  };
+
+  // Serve Swagger UI on root and docs endpoints
+  app.get('/', serveSwaggerDocs);
+  app.get('/docs', serveSwaggerDocs);
+  app.get('/swagger', serveSwaggerDocs);
+  app.get('/api-docs', serveSwaggerDocs);
+  app.get('/api/docs', serveSwaggerDocs);
+  app.get('/api/swagger', serveSwaggerDocs);
+
+  // OpenAPI JSON specifications
+  app.get('/swagger.json', serveSwaggerJson);
+  app.get('/api/swagger.json', serveSwaggerJson);
+  app.get('/api/openapi.json', serveSwaggerJson);
 
   // Health check endpoints
   app.get('/health', healthCheck);
@@ -61,27 +86,12 @@ export function createApp(): Express {
     queryController.handleQuery.bind(queryController)
   );
 
-  // Root welcome route
-  app.get('/', (req: Request, res: Response) => {
-    res.json({
-      name: 'AI Knowledge Inbox API',
-      version: '1.0.0',
-      description: 'Production-ready minimal RAG pipeline with Express, Prisma, pgvector, and OpenAI',
-      endpoints: {
-        ingest: 'POST /ingest (or /api/ingest)',
-        items: 'GET /items (or /api/items)',
-        query: 'POST /query (or /api/query)',
-        health: 'GET /health',
-      },
-    });
-  });
-
   // 404 Route Handler
   app.use((req: Request, res: Response) => {
     res.status(404).json({
       success: false,
       error: {
-        message: `Endpoint ${req.method} ${req.originalUrl} not found`,
+        message: `Endpoint ${req.method} ${req.originalUrl} not found. Visit /docs or /swagger for API documentation.`,
         statusCode: 404,
       },
     });
