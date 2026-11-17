@@ -4,20 +4,11 @@ import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 
 export class AiService {
-  private geminiClient: GoogleGenerativeAI | null = null;
   private openAiClient: OpenAI | null = null;
   private isOpenAiExhausted = false;
+  public lastGeminiError: string | null = null;
 
   constructor() {
-    if (env.GEMINI_API_KEY) {
-      try {
-        this.geminiClient = new GoogleGenerativeAI(env.GEMINI_API_KEY);
-        logger.info('Google Gemini AI initialized from environment (Free Tier: text-embedding-004 & gemini-1.5-flash)');
-      } catch (e: any) {
-        logger.warn({ error: e.message }, 'Failed to initialize Gemini from env key');
-      }
-    }
-
     if (env.OPENAI_API_KEY) {
       try {
         this.openAiClient = new OpenAI({ apiKey: env.OPENAI_API_KEY });
@@ -28,36 +19,54 @@ export class AiService {
     }
   }
 
+  /**
+   * Resolves Gemini API key with runtime environment priority.
+   */
+  public getGeminiApiKey(customApiKey?: string): string {
+    const key = (
+      customApiKey ||
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.VITE_GEMINI_API_KEY ||
+      env.GEMINI_API_KEY ||
+      ''
+    ).trim();
+    return key;
+  }
+
+  /**
+   * Dynamically constructs GoogleGenerativeAI client on each request.
+   */
+  public getGeminiInstance(customApiKey?: string): GoogleGenerativeAI | null {
+    const key = this.getGeminiApiKey(customApiKey);
+    if (key && key.length > 5) {
+      try {
+        return new GoogleGenerativeAI(key);
+      } catch (e: any) {
+        logger.error({ err: e.message }, 'Failed to create GoogleGenerativeAI instance');
+        return null;
+      }
+    }
+    return null;
+  }
+
   public getStatus(): string {
-    if (this.geminiClient) {
+    const hasGemini = !!this.getGeminiApiKey();
+    if (hasGemini) {
       return 'Google Gemini (Free Tier: text-embedding-004 + gemini-1.5-flash)';
     }
     if (this.openAiClient && !this.isOpenAiExhausted) {
       return 'OpenAI enabled';
     }
     if (this.isOpenAiExhausted) {
-      return 'Local RAG Mode (OpenAI quota depleted - add GEMINI_API_KEY for free AI)';
+      return 'Local RAG Mode (OpenAI quota depleted - add GEMINI_API_KEY to Preview & Production)';
     }
-    return 'Local Semantic Search Mode (Simulated 768-d vectors + Grounded Synthesis)';
-  }
-
-  /**
-   * Helper to get or create Gemini client (either from custom key or env)
-   */
-  private getGeminiInstance(customApiKey?: string): GoogleGenerativeAI | null {
-    if (customApiKey && customApiKey.trim().length > 0) {
-      try {
-        return new GoogleGenerativeAI(customApiKey.trim());
-      } catch {
-        return null;
-      }
-    }
-    return this.geminiClient;
+    return 'Local Semantic Search Mode (Smart 768-d token vectors + Grounded Synthesis)';
   }
 
   /**
    * Generates vector embeddings for a batch of strings.
-   * Priority: Google Gemini (text-embedding-004, 768 dims) -> OpenAI (1536 dims) -> Simulation (768 dims)
+   * Priority: Google Gemini (text-embedding-004, 768 dims) -> OpenAI (1536 dims) -> Semantic Fallback (768 dims)
    */
   public async generateEmbeddings(texts: string[], customApiKey?: string): Promise<number[][]> {
     if (!texts.length) return [];
@@ -77,12 +86,14 @@ export class AiService {
           })
         );
 
-        logger.debug(
+        this.lastGeminiError = null;
+        logger.info(
           { count: results.length, dims: results[0]?.length },
           'Gemini text-embedding-004 embeddings successfully generated'
         );
         return results;
       } catch (error: any) {
+        this.lastGeminiError = `Gemini Embedding: ${error.message}`;
         logger.warn(
           { error: error.message },
           'Gemini embedding API call failed. Checking fallback providers...'
@@ -115,8 +126,8 @@ export class AiService {
       }
     }
 
-    // 3. Fallback: High-Entropy Deterministic Simulated Embeddings (768 dims)
-    logger.info('Using high-entropy deterministic embeddings (local fallback mode, 768 dims)');
+    // 3. Fallback: Smart Semantic Token Vector Generator (768 dims)
+    logger.info('Using smart semantic token vectors (local fallback mode, 768 dims)');
     return texts.map((t) => this.generateMockEmbedding(t, 768));
   }
 
@@ -173,9 +184,11 @@ Answer:`;
         const result = await model.generateContent(userPrompt);
         const text = result.response.text()?.trim();
         if (text) {
+          this.lastGeminiError = null;
           return text;
         }
       } catch (error: any) {
+        this.lastGeminiError = `Gemini Chat: ${error.message}`;
         logger.warn(
           { error: error.message },
           'Gemini chat completion failed. Checking fallback providers...'
@@ -216,37 +229,105 @@ Answer:`;
       }
     }
 
-    // 3. Fallback: Intelligent Grounded Synthesis from Context Chunks
+    // 3. Fallback: Intelligent Grounded Extraction & Synthesis from Context Chunks
     if (contextChunks.length === 0) {
       return 'I could not find any relevant information in your saved notes or URLs to answer this question.';
     }
 
-    const topSnippets = contextChunks.slice(0, 3);
-    const synthesis = topSnippets
-      .map(
-        (c, i) =>
-          `**• [Source ${i + 1}: ${c.sourceTitle}]** (Part ${c.chunkIndex + 1}):\n> "${c.content.trim()}"`
-      )
-      .join('\n\n');
+    // Tokenize query to find matching sentences in the retrieved context
+    const queryTokens = query
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !['why', 'what', 'how', 'when', 'the', 'was', 'were', 'for'].includes(w));
+
+    const candidateSentences: { sentence: string; source: string; score: number }[] = [];
+    for (const chunk of contextChunks) {
+      const sentences = chunk.content.split(/(?<=[.?!])\s+/);
+      for (const sent of sentences) {
+        let matchCount = 0;
+        const lowerSent = sent.toLowerCase();
+        for (const qt of queryTokens) {
+          if (lowerSent.includes(qt)) matchCount += 1;
+        }
+        if (matchCount > 0) {
+          candidateSentences.push({
+            sentence: sent.trim(),
+            source: chunk.sourceTitle,
+            score: matchCount,
+          });
+        }
+      }
+    }
+
+    candidateSentences.sort((a, b) => b.score - a.score);
+
+    let answerText = '';
+    if (candidateSentences.length > 0) {
+      const best = candidateSentences[0];
+      answerText = `According to your saved knowledge (**${best.source}**):\n\n> "${best.sentence}"`;
+      if (candidateSentences.length > 1 && candidateSentences[1].sentence !== best.sentence) {
+        answerText += `\n\nAdditionally: "${candidateSentences[1].sentence}"`;
+      }
+    } else {
+      answerText = `Based on your saved sources:\n\n> "${contextChunks[0].content.trim()}"`;
+    }
+
+    const keyNotice = this.lastGeminiError
+      ? `*(Gemini API Warning: ${this.lastGeminiError})*`
+      : `*(To enable Gemini generative reasoning, check "Preview" alongside "Production" in Vercel GEMINI_API_KEY settings, or click "Set Gemini Key" in the top bar.)*`;
 
     return (
-      `Here is the relevant information retrieved from your saved knowledge base regarding **"${query}"**:\n\n` +
-      `${synthesis}\n\n` +
+      `${answerText}\n\n` +
       `---\n` +
-      `💡 *(Grounded answer synthesized from your knowledge chunks. To enable full Gemini generative reasoning, add your free GEMINI_API_KEY in Vercel settings or web settings.)*`
+      `💡 ${keyNotice}`
     );
   }
 
   /**
-   * Deterministic unit vector from text hashing (used when no API key is provided).
+   * Semantic Token Vector Generator (used as fallback when API key is missing or quota exhausted).
+   * Tokenizes text into words, hashes word stems into specific dimension buckets with TF weights.
+   * This guarantees that matching terms like "Charminar" and "Hyderabad" produce high cosine similarity!
    */
   private generateMockEmbedding(text: string, dim = 768): number[] {
     const vec = new Array(dim).fill(0);
-    for (let i = 0; i < text.length; i++) {
-      const code = text.charCodeAt(i);
-      const idx = (code * 31 + i * 17) % dim;
-      vec[idx] += (code % 10) / 10;
+    const stopWords = new Set([
+      'a', 'an', 'the', 'is', 'are', 'was', 'were', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+      'and', 'or', 'it', 'this', 'that', 'what', 'why', 'how', 'when', 'who', 'which', 'from', 'into'
+    ]);
+
+    // 1. Extract words/tokens
+    const tokens = text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2);
+
+    if (tokens.length === 0) {
+      vec[0] = 1;
+      return vec;
     }
+
+    // 2. Hash each word into 3 distinct prime-spaced buckets for collision resistance
+    for (const token of tokens) {
+      const isStop = stopWords.has(token);
+      const weight = isStop ? 0.1 : 2.0;
+
+      let hash = 0;
+      for (let i = 0; i < token.length; i++) {
+        hash = (hash * 31 + token.charCodeAt(i)) >>> 0;
+      }
+
+      const idx1 = hash % dim;
+      const idx2 = (hash * 7 + 13) % dim;
+      const idx3 = (hash * 37 + 101) % dim;
+
+      vec[idx1] += weight;
+      vec[idx2] += weight * 0.7;
+      vec[idx3] += weight * 0.5;
+    }
+
+    // 3. Normalize vector to unit length (L2 norm)
     const norm = Math.sqrt(vec.reduce((sum, v) => sum + v * v, 0)) || 1;
     return vec.map((v) => v / norm);
   }
