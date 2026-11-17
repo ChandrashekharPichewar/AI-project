@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import { OpenAI } from 'openai';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { AppError } from '../middlewares/errorHandler.js';
@@ -30,7 +30,7 @@ export class OpenAiService {
           input: texts,
         });
 
-        return response.data.map((item) => item.embedding);
+        return response.data.map((item: { embedding: number[] }) => item.embedding);
       } catch (error: any) {
         logger.error({ error: error.message }, 'Failed to generate embeddings from OpenAI API');
         throw new AppError(`OpenAI Embedding Error: ${error.message}`, 502);
