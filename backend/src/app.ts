@@ -15,14 +15,27 @@ import { openApiSpec, getSwaggerHtml } from './config/swagger.js';
 export function createApp(): Express {
   const app = express();
 
-  // Middleware configuration
-  app.use(
-    cors({
-      origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(','),
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    })
-  );
+  // Bulletproof CORS Configuration (handles all origins & preflight OPTIONS)
+  app.use((req: Request, res: Response, next) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    } else {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type,Authorization,X-Requested-With,Accept,Origin'
+    );
+
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
 
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
