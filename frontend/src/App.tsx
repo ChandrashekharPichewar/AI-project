@@ -70,7 +70,7 @@ export default function App() {
 
           <div className="text-xs text-slate-500 flex items-center gap-1.5">
             <BookOpen className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Postgres + pgvector • Express • Cheerio • OpenAI GPT</span>
+            <span>Postgres + pgvector • Express • Cheerio • Google Gemini</span>
           </div>
         </div>
 

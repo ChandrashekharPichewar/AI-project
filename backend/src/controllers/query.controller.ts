@@ -11,9 +11,14 @@ export class QueryController {
   ): Promise<void> {
     try {
       const { query, topK } = req.body;
-      logger.info({ query, topK }, 'Received knowledge inbox question query');
+      const customKey =
+        (req.headers['x-gemini-key'] as string) ||
+        (req.body as any).geminiApiKey ||
+        undefined;
 
-      const result = await ragService.executeRagQuery(query, topK);
+      logger.info({ query, topK, hasCustomKey: !!customKey }, 'Received knowledge inbox question query');
+
+      const result = await ragService.executeRagQuery(query, topK, customKey);
 
       res.status(200).json({
         success: true,

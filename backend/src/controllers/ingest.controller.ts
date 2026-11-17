@@ -44,9 +44,13 @@ export class IngestController {
         return;
       }
 
-      // Step 2: Generate Vector Embeddings (1536 dims)
+      // Step 2: Generate Vector Embeddings (768 dims with Gemini / fallback)
       const chunkTexts = chunks.map((c) => c.content);
-      const embeddings = await openAiService.generateEmbeddings(chunkTexts);
+      const customKey =
+        (req.headers['x-gemini-key'] as string) ||
+        (req.body as any).geminiApiKey ||
+        undefined;
+      const embeddings = await openAiService.generateEmbeddings(chunkTexts, customKey);
 
       // Step 3: Store Item & Vector Chunks in PostgreSQL / pgvector
       const stored = await vectorService.storeItemWithChunks(

@@ -8,12 +8,16 @@ export class RagService {
    * Executes RAG workflow:
    * Query Embedding -> pgvector similarity search -> Context synthesis -> LLM Generation with citations
    */
-  public async executeRagQuery(query: string, topK = 4): Promise<QueryResponse> {
+  public async executeRagQuery(
+    query: string,
+    topK = 4,
+    customGeminiKey?: string
+  ): Promise<QueryResponse> {
     const startTime = Date.now();
-    logger.info({ query, topK }, 'Executing RAG query pipeline');
+    logger.info({ query, topK, hasCustomKey: !!customGeminiKey }, 'Executing RAG query pipeline');
 
     // 1. Generate Query Vector Embedding
-    const queryEmbedding = await openAiService.generateQueryEmbedding(query);
+    const queryEmbedding = await openAiService.generateQueryEmbedding(query, customGeminiKey);
 
     // 2. Retrieve Top-K Semantically Similar Chunks
     const similarChunks = await vectorService.searchSimilarChunks(queryEmbedding, topK);
@@ -30,8 +34,8 @@ export class RagService {
       chunkIndex: chunk.chunkIndex,
     }));
 
-    // 4. Generate Grounded Answer via OpenAI GPT
-    const answer = await openAiService.generateAnswer(query, contextForLlm);
+    // 4. Generate Grounded Answer via Gemini / GPT / Fallback
+    const answer = await openAiService.generateAnswer(query, contextForLlm, customGeminiKey);
 
     // 5. Structure Cited Sources
     const sources: SourceCitation[] = similarChunks.map((chunk) => ({

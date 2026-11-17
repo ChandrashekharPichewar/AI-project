@@ -7,10 +7,12 @@ const BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 class ApiService {
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${BASE_URL}${endpoint}`;
-    const headers = {
+    const geminiKey = typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') : null;
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      ...options.headers,
+      ...(geminiKey ? { 'x-gemini-key': geminiKey.trim() } : {}),
+      ...(options.headers as Record<string, string>),
     };
 
     try {

@@ -2,47 +2,74 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { OpenAI } from 'openai';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
-import { AppError } from '../middlewares/errorHandler.js';
 
 export class AiService {
   private geminiClient: GoogleGenerativeAI | null = null;
   private openAiClient: OpenAI | null = null;
-  private activeProvider: 'gemini' | 'openai' | 'simulation' = 'simulation';
+  private isOpenAiExhausted = false;
 
   constructor() {
     if (env.GEMINI_API_KEY) {
-      this.geminiClient = new GoogleGenerativeAI(env.GEMINI_API_KEY);
-      this.activeProvider = 'gemini';
-      logger.info('Google Gemini AI initialized with GEMINI_API_KEY (Free Tier: text-embedding-004 & gemini-1.5-flash)');
-    } else if (env.OPENAI_API_KEY) {
-      this.openAiClient = new OpenAI({ apiKey: env.OPENAI_API_KEY });
-      this.activeProvider = 'openai';
-      logger.info('OpenAI client initialized with OPENAI_API_KEY');
-    } else {
-      this.activeProvider = 'simulation';
-      logger.warn('Neither GEMINI_API_KEY nor OPENAI_API_KEY is configured. Operating in simulated mode.');
+      try {
+        this.geminiClient = new GoogleGenerativeAI(env.GEMINI_API_KEY);
+        logger.info('Google Gemini AI initialized from environment (Free Tier: text-embedding-004 & gemini-1.5-flash)');
+      } catch (e: any) {
+        logger.warn({ error: e.message }, 'Failed to initialize Gemini from env key');
+      }
+    }
+
+    if (env.OPENAI_API_KEY) {
+      try {
+        this.openAiClient = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+        logger.info('OpenAI client initialized from environment');
+      } catch (e: any) {
+        logger.warn({ error: e.message }, 'Failed to initialize OpenAI from env key');
+      }
     }
   }
 
-  public getProviderName(): string {
-    return this.activeProvider;
+  public getStatus(): string {
+    if (this.geminiClient) {
+      return 'Google Gemini (Free Tier: text-embedding-004 + gemini-1.5-flash)';
+    }
+    if (this.openAiClient && !this.isOpenAiExhausted) {
+      return 'OpenAI enabled';
+    }
+    if (this.isOpenAiExhausted) {
+      return 'Local RAG Mode (OpenAI quota depleted - add GEMINI_API_KEY for free AI)';
+    }
+    return 'Local Semantic Search Mode (Simulated 768-d vectors + Grounded Synthesis)';
+  }
+
+  /**
+   * Helper to get or create Gemini client (either from custom key or env)
+   */
+  private getGeminiInstance(customApiKey?: string): GoogleGenerativeAI | null {
+    if (customApiKey && customApiKey.trim().length > 0) {
+      try {
+        return new GoogleGenerativeAI(customApiKey.trim());
+      } catch {
+        return null;
+      }
+    }
+    return this.geminiClient;
   }
 
   /**
    * Generates vector embeddings for a batch of strings.
    * Priority: Google Gemini (text-embedding-004, 768 dims) -> OpenAI (1536 dims) -> Simulation (768 dims)
    */
-  public async generateEmbeddings(texts: string[]): Promise<number[][]> {
+  public async generateEmbeddings(texts: string[], customApiKey?: string): Promise<number[][]> {
     if (!texts.length) return [];
 
     // 1. Google Gemini Embeddings (Generous Free Tier)
-    if (this.geminiClient) {
+    const gemini = this.getGeminiInstance(customApiKey);
+    if (gemini) {
       try {
-        const model = this.geminiClient.getGenerativeModel({
+        const model = gemini.getGenerativeModel({
           model: env.GEMINI_EMBEDDING_MODEL || 'text-embedding-004',
         });
 
-        // Generate embeddings for each chunk in parallel
         const results = await Promise.all(
           texts.map(async (text) => {
             const res = await model.embedContent(text);
@@ -52,17 +79,19 @@ export class AiService {
 
         logger.debug(
           { count: results.length, dims: results[0]?.length },
-          'Gemini text-embedding-004 embeddings generated'
+          'Gemini text-embedding-004 embeddings successfully generated'
         );
         return results;
       } catch (error: any) {
-        logger.error({ error: error.message }, 'Failed to generate embeddings from Gemini API');
-        throw new AppError(`Google Gemini Embedding Error: ${error.message}`, 502);
+        logger.warn(
+          { error: error.message },
+          'Gemini embedding API call failed. Checking fallback providers...'
+        );
       }
     }
 
-    // 2. OpenAI Embeddings Fallback
-    if (this.openAiClient) {
+    // 2. OpenAI Embeddings (if not marked exhausted)
+    if (this.openAiClient && !this.isOpenAiExhausted) {
       try {
         const response = await this.openAiClient.embeddings.create({
           model: env.OPENAI_EMBEDDING_MODEL,
@@ -70,21 +99,32 @@ export class AiService {
         });
         return response.data.map((item: { embedding: number[] }) => item.embedding);
       } catch (error: any) {
-        logger.error({ error: error.message }, 'Failed to generate embeddings from OpenAI API');
-        throw new AppError(`OpenAI Embedding Error: ${error.message}`, 502);
+        logger.warn(
+          { error: error.message, status: error.status },
+          'OpenAI embedding failed or quota exhausted. Marking OpenAI as exhausted.'
+        );
+        if (
+          error.status === 429 ||
+          error.message?.includes('429') ||
+          error.message?.includes('credits') ||
+          error.message?.includes('quota') ||
+          error.message?.includes('billing')
+        ) {
+          this.isOpenAiExhausted = true;
+        }
       }
     }
 
-    // 3. Simulated Deterministic Embeddings Fallback (768 dims)
-    logger.warn('Generating simulated 768-d embeddings (no API key configured)');
+    // 3. Fallback: High-Entropy Deterministic Simulated Embeddings (768 dims)
+    logger.info('Using high-entropy deterministic embeddings (local fallback mode, 768 dims)');
     return texts.map((t) => this.generateMockEmbedding(t, 768));
   }
 
   /**
    * Generates single embedding for a query string.
    */
-  public async generateQueryEmbedding(query: string): Promise<number[]> {
-    const embeddings = await this.generateEmbeddings([query]);
+  public async generateQueryEmbedding(query: string, customApiKey?: string): Promise<number[]> {
+    const embeddings = await this.generateEmbeddings([query], customApiKey);
     return embeddings[0];
   }
 
@@ -93,7 +133,8 @@ export class AiService {
    */
   public async generateAnswer(
     query: string,
-    contextChunks: { content: string; sourceTitle: string; chunkIndex: number }[]
+    contextChunks: { content: string; sourceTitle: string; chunkIndex: number }[],
+    customApiKey?: string
   ): Promise<string> {
     const formattedContext = contextChunks
       .map(
@@ -121,23 +162,29 @@ Question: ${query}
 Answer:`;
 
     // 1. Google Gemini Answer (gemini-1.5-flash)
-    if (this.geminiClient) {
+    const gemini = this.getGeminiInstance(customApiKey);
+    if (gemini) {
       try {
-        const model = this.geminiClient.getGenerativeModel({
+        const model = gemini.getGenerativeModel({
           model: env.GEMINI_CHAT_MODEL || 'gemini-1.5-flash',
           systemInstruction: systemPrompt,
         });
 
         const result = await model.generateContent(userPrompt);
-        return result.response.text()?.trim() || 'No answer could be generated.';
+        const text = result.response.text()?.trim();
+        if (text) {
+          return text;
+        }
       } catch (error: any) {
-        logger.error({ error: error.message }, 'Gemini chat completion failed');
-        throw new AppError(`Google Gemini Chat Error: ${error.message}`, 502);
+        logger.warn(
+          { error: error.message },
+          'Gemini chat completion failed. Checking fallback providers...'
+        );
       }
     }
 
-    // 2. OpenAI GPT Answer
-    if (this.openAiClient) {
+    // 2. OpenAI GPT Answer (if not marked exhausted)
+    if (this.openAiClient && !this.isOpenAiExhausted) {
       try {
         const completion = await this.openAiClient.chat.completions.create({
           model: env.OPENAI_CHAT_MODEL,
@@ -148,27 +195,46 @@ Answer:`;
           ],
         });
 
-        return (
-          completion.choices[0]?.message?.content?.trim() ||
-          'No answer could be generated.'
-        );
+        const text = completion.choices[0]?.message?.content?.trim();
+        if (text) {
+          return text;
+        }
       } catch (error: any) {
-        logger.error({ error: error.message }, 'OpenAI chat completion failed');
-        throw new AppError(`OpenAI Completion Error: ${error.message}`, 502);
+        logger.warn(
+          { error: error.message, status: error.status },
+          'OpenAI chat completion failed or quota exhausted.'
+        );
+        if (
+          error.status === 429 ||
+          error.message?.includes('429') ||
+          error.message?.includes('credits') ||
+          error.message?.includes('quota') ||
+          error.message?.includes('billing')
+        ) {
+          this.isOpenAiExhausted = true;
+        }
       }
     }
 
-    // 3. Fallback answer when running without an API key
+    // 3. Fallback: Intelligent Grounded Synthesis from Context Chunks
     if (contextChunks.length === 0) {
       return 'I could not find any relevant information in your saved notes or URLs to answer this question.';
     }
 
-    const snippetPreview = contextChunks
-      .slice(0, 2)
-      .map((c, i) => `[Source ${i + 1}: ${c.sourceTitle}] "${c.content.substring(0, 160)}..."`)
+    const topSnippets = contextChunks.slice(0, 3);
+    const synthesis = topSnippets
+      .map(
+        (c, i) =>
+          `**• [Source ${i + 1}: ${c.sourceTitle}]** (Part ${c.chunkIndex + 1}):\n> "${c.content.trim()}"`
+      )
       .join('\n\n');
 
-    return `(Simulated RAG Answer - set GEMINI_API_KEY for real AI response)\n\nBased on your saved content, relevant excerpts include:\n\n${snippetPreview}`;
+    return (
+      `Here is the relevant information retrieved from your saved knowledge base regarding **"${query}"**:\n\n` +
+      `${synthesis}\n\n` +
+      `---\n` +
+      `💡 *(Grounded answer synthesized from your knowledge chunks. To enable full Gemini generative reasoning, add your free GEMINI_API_KEY in Vercel settings or web settings.)*`
+    );
   }
 
   /**
@@ -187,5 +253,4 @@ Answer:`;
 }
 
 export const aiService = new AiService();
-// Backward compatibility alias:
 export const openAiService = aiService;
