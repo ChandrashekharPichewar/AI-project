@@ -41,6 +41,7 @@ export function createApp(): Express {
 
   // Serve Swagger UI on root and docs endpoints
   app.get('/', serveSwaggerDocs);
+  app.get('/api', serveSwaggerDocs);
   app.get('/docs', serveSwaggerDocs);
   app.get('/swagger', serveSwaggerDocs);
   app.get('/api-docs', serveSwaggerDocs);
