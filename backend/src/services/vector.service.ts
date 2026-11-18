@@ -1,4 +1,4 @@
-import { getPrismaClient, isDatabaseHealthy } from '../config/prisma.js';
+import { getPrismaClient, isDatabaseHealthy, ensureDatabaseConnected } from '../config/prisma.js';
 import { logger } from '../config/logger.js';
 import { VectorSearchResult, ChunkMetadata, ItemType } from '../types/index.js';
 import crypto from 'crypto';
@@ -40,6 +40,7 @@ export class VectorService {
   ): Promise<{ id: string; chunkCount: number }> {
     const itemId = crypto.randomUUID();
 
+    await ensureDatabaseConnected();
     if (isDatabaseHealthy()) {
       const prisma = getPrismaClient();
 
@@ -122,6 +123,7 @@ export class VectorService {
     queryEmbedding: number[],
     topK = 4
   ): Promise<VectorSearchResult[]> {
+    await ensureDatabaseConnected();
     if (isDatabaseHealthy()) {
       try {
         const prisma = getPrismaClient();
@@ -186,6 +188,7 @@ export class VectorService {
    * Retrieves all items with their chunk counts.
    */
   public async getAllItems(): Promise<any[]> {
+    await ensureDatabaseConnected();
     if (isDatabaseHealthy()) {
       try {
         const prisma = getPrismaClient();
@@ -237,6 +240,7 @@ export class VectorService {
    * Deletes an item and its associated chunks.
    */
   public async deleteItem(id: string): Promise<boolean> {
+    await ensureDatabaseConnected();
     if (isDatabaseHealthy()) {
       try {
         const prisma = getPrismaClient();

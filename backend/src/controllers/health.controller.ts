@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
-import { isDatabaseHealthy } from '../config/prisma.js';
+import { isDatabaseHealthy, ensureDatabaseConnected } from '../config/prisma.js';
 import { aiService } from '../services/ai.service.js';
 
-export function healthCheck(req: Request, res: Response): void {
+export async function healthCheck(req: Request, res: Response): Promise<void> {
+  await ensureDatabaseConnected();
   const dbConnected = isDatabaseHealthy();
   const hasKey = !!aiService.getGeminiApiKey();
 
