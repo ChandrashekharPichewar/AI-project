@@ -6,6 +6,15 @@ Built for the **Turium Interview Task: Build a Minimal "AI Knowledge Inbox"**.
 
 ---
 
+## 🌐 Live Deployment & API Documentation
+
+* **Live Web Application (Netlify):** [https://ai-knowledge-indox.netlify.app](https://ai-knowledge-indox.netlify.app)
+* **Production API Service (Vercel):** [https://ai-project-rouge-eight.vercel.app](https://ai-project-rouge-eight.vercel.app)
+* **Interactive OpenAPI / Swagger Documentation:** [https://ai-project-rouge-eight.vercel.app/api-docs](https://ai-project-rouge-eight.vercel.app/api-docs)
+* **Live System Health Check:** [https://ai-project-rouge-eight.vercel.app/api/health](https://ai-project-rouge-eight.vercel.app/api/health)
+
+---
+
 ## 🏗️ Architecture & Design Philosophy
 
 The project is structured with a strict **Separation of Concerns** using the **Model-View-ViewModel (MVVM)** pattern on the frontend and a **Layered Service-Repository Architecture** on the backend.
@@ -54,7 +63,7 @@ The project is structured with a strict **Separation of Concerns** using the **M
 | **ORM** | Prisma ORM | Type-safe schema definition and database migrations |
 | **Database** | PostgreSQL | Relational metadata storage |
 | **Vector Engine** | `pgvector` extension | High-dimensional vector indexing and cosine distance queries |
-| **LLM & Embeddings** | OpenAI GPT (`gpt-4o-mini`) + `text-embedding-3-small` | Semantic embeddings (1536-d) & grounded QA |
+| **LLM & Embeddings** | Google Gemini (`gemini-2.0-flash` + `text-embedding-004`) / OpenAI | Semantic vector embeddings (768-d) & grounded RAG QA |
 | **Web Scraping** | Cheerio + Axios | Server-side web content extraction and HTML noise stripping |
 | **Validation** | Zod | Runtime schema validation for all incoming payloads |
 | **Logging** | Pino | Structured JSON logging with request tracing and latency metrics |
