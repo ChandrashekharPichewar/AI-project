@@ -71,33 +71,43 @@ export class AiService {
   public async generateEmbeddings(texts: string[], customApiKey?: string): Promise<number[][]> {
     if (!texts.length) return [];
 
-    // 1. Google Gemini Embeddings (Generous Free Tier)
+    // 1. Google Gemini Embeddings (with candidate model fallback)
     const gemini = this.getGeminiInstance(customApiKey);
     if (gemini) {
-      try {
-        const model = gemini.getGenerativeModel({
-          model: env.GEMINI_EMBEDDING_MODEL || 'text-embedding-004',
-        });
+      const candidateEmbModels = [
+        env.GEMINI_EMBEDDING_MODEL || 'text-embedding-004',
+        'embedding-001',
+      ];
 
-        const results = await Promise.all(
-          texts.map(async (text) => {
-            const res = await model.embedContent(text);
-            return res.embedding.values;
-          })
-        );
+      for (const embModelName of candidateEmbModels) {
+        try {
+          const model = gemini.getGenerativeModel({
+            model: embModelName,
+          });
 
-        this.lastGeminiError = null;
-        logger.info(
-          { count: results.length, dims: results[0]?.length },
-          'Gemini text-embedding-004 embeddings successfully generated'
-        );
-        return results;
-      } catch (error: any) {
-        this.lastGeminiError = `Gemini Embedding: ${error.message}`;
-        logger.warn(
-          { error: error.message },
-          'Gemini embedding API call failed. Checking fallback providers...'
-        );
+          const results = await Promise.all(
+            texts.map(async (text) => {
+              const res = await model.embedContent(text);
+              return res.embedding.values;
+            })
+          );
+
+          this.lastGeminiError = null;
+          logger.info(
+            { model: embModelName, count: results.length, dims: results[0]?.length },
+            'Gemini embeddings successfully generated'
+          );
+          return results;
+        } catch (error: any) {
+          logger.warn(
+            { model: embModelName, error: error.message },
+            'Gemini embedding candidate failed'
+          );
+          this.lastGeminiError = `Gemini Embedding: ${error.message}`;
+          if (error.message?.includes('404') || error.message?.includes('not found')) {
+            continue;
+          }
+        }
       }
     }
 
@@ -172,27 +182,43 @@ Question: ${query}
 
 Answer:`;
 
-    // 1. Google Gemini Answer (gemini-1.5-flash)
+    // 1. Google Gemini Answer (Multi-model auto-discovery: gemini-2.0-flash -> gemini-1.5-flash-latest -> gemini-1.5-flash -> gemini-pro)
     const gemini = this.getGeminiInstance(customApiKey);
     if (gemini) {
-      try {
-        const model = gemini.getGenerativeModel({
-          model: env.GEMINI_CHAT_MODEL || 'gemini-1.5-flash',
-          systemInstruction: systemPrompt,
-        });
+      const candidateModels = [
+        'gemini-2.0-flash',
+        'gemini-1.5-flash-latest',
+        env.GEMINI_CHAT_MODEL || 'gemini-1.5-flash',
+        'gemini-1.5-flash-001',
+        'gemini-1.5-pro',
+        'gemini-pro',
+      ];
 
-        const result = await model.generateContent(userPrompt);
-        const text = result.response.text()?.trim();
-        if (text) {
-          this.lastGeminiError = null;
-          return text;
+      for (const modelName of candidateModels) {
+        try {
+          const model = gemini.getGenerativeModel({
+            model: modelName,
+            systemInstruction: systemPrompt,
+          });
+
+          const result = await model.generateContent(userPrompt);
+          const text = result.response.text()?.trim();
+          if (text) {
+            this.lastGeminiError = null;
+            logger.info({ model: modelName }, 'Gemini answer generated successfully');
+            return text;
+          }
+        } catch (error: any) {
+          logger.warn(
+            { model: modelName, error: error.message },
+            'Gemini chat completion model candidate failed'
+          );
+          this.lastGeminiError = `Gemini Chat: ${error.message}`;
+          // If 404 (model name not found on v1beta), try the next candidate!
+          if (error.message?.includes('404') || error.message?.includes('not found')) {
+            continue;
+          }
         }
-      } catch (error: any) {
-        this.lastGeminiError = `Gemini Chat: ${error.message}`;
-        logger.warn(
-          { error: error.message },
-          'Gemini chat completion failed. Checking fallback providers...'
-        );
       }
     }
 
@@ -273,15 +299,7 @@ Answer:`;
       answerText = `Based on your saved sources:\n\n> "${contextChunks[0].content.trim()}"`;
     }
 
-    const keyNotice = this.lastGeminiError
-      ? `*(Gemini API Warning: ${this.lastGeminiError})*`
-      : `*(To enable Gemini generative reasoning, check "Preview" alongside "Production" in Vercel GEMINI_API_KEY settings, or click "Set Gemini Key" in the top bar.)*`;
-
-    return (
-      `${answerText}\n\n` +
-      `---\n` +
-      `💡 ${keyNotice}`
-    );
+    return answerText;
   }
 
   /**

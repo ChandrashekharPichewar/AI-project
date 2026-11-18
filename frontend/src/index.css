@@ -7,6 +7,19 @@
     @apply antialiased bg-slate-50 text-slate-900;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
+
+  /* Hide any Netlify injected feedback badges, drawers, or banners */
+  [data-netlify-drawer],
+  .netlify-drawer,
+  iframe[id*="netlify"],
+  #netlify-drawer-container,
+  div[class*="netlify"],
+  div[id*="netlify"] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
 }
 
 @keyframes fadeIn {

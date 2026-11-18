@@ -8,7 +8,7 @@ import { CitationModalView } from './views/CitationModalView';
 import { useInboxViewModel } from './viewmodels/useInboxViewModel';
 import { useRagViewModel } from './viewmodels/useRagViewModel';
 import { useHealthViewModel } from './viewmodels/useHealthViewModel';
-import { Layers, Sparkles, Inbox, BookOpen } from 'lucide-react';
+import { Layers, Sparkles, Inbox } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'both' | 'inbox' | 'ask'>('both');
@@ -66,11 +66,6 @@ export default function App() {
               <Sparkles className="w-3.5 h-3.5" />
               Ask AI & RAG
             </button>
-          </div>
-
-          <div className="text-xs text-slate-500 flex items-center gap-1.5">
-            <BookOpen className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Postgres + pgvector • Express • Cheerio • Google Gemini</span>
           </div>
         </div>
 
